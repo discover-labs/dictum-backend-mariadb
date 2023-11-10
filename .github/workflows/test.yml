@@ -1,0 +1,53 @@
+name: Test backend
+on:
+  push:
+    paths:
+      - tests/**
+      - dictum_backend_mariadb/**
+      - .github/**
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.9"
+          - "3.10"
+          - "3.11"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install poetry
+      - run: poetry install
+
+      - name: Clone dictum-core
+        uses: actions/checkout@v3
+        with:
+          repository: discover-labs/dictum-core
+          path: dictum-core
+          fetch-depth: 0  # fetch all tags
+
+      - name: Find latest compatible tag
+        id: find_tag
+        run: echo "::set-output name=tag::$(git -C dictum-core tag | poetry run python -m dictum_core.utils.version)"
+
+      - name: Checkout dictum-core to the latest compatible tag
+        run: git checkout ${{ steps.find_tag.outputs.tag }}
+        working-directory: dictum-core
+
+      - name: Build Dictum wheel
+        run: poetry build
+        working-directory: dictum-core/dictum-core
+
+      - name: Install dictum-core from wheel
+        run: poetry run pip install dictum-core/dictum-core/dist/*.whl
+
+      - name: Remove dictum source to avoid import conflicts
+        run: rm -rf dictum-core
+
+      - name: Run tests
+        run: poetry run pytest
